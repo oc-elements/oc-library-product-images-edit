@@ -1,5 +1,9 @@
 <link rel="import" href="../polymer/polymer.html">
 
+<link rel="import" href="../oc-product-library-api/oc-product-library-api.html">
+<link rel="import" href="../oc-product-image-edit/oc-product-image-edit.html">
+<link rel="import" href="../paper-toast/paper-toast.html">
+
 <!--
 `oc-library-product-images-edit`
 Element to manage library product images on the Ordercloud platform
@@ -9,12 +13,11 @@ Element to manage library product images on the Ordercloud platform
 
 <dom-module id="oc-library-product-images-edit">
   <template>
-    <style>
-      :host {
-        display: block;
-      }
-    </style>
-    <h2>Hello [[prop1]]</h2>
+    <oc-product-library-api id="prodApi"></oc-product-library-api>
+
+    <paper-toast id="toast"></paper-toast>
+
+    <oc-product-image-edit images="[[_images]]" target="[[_computeUrl(productId)]]" headers="[[_computeHeaders(organisationId)]]"></oc-product-image-edit>
   </template>
 
   <script>
@@ -23,10 +26,105 @@ Element to manage library product images on the Ordercloud platform
       is: 'oc-library-product-images-edit',
 
       properties: {
-        prop1: {
-          type: String,
-          value: 'oc-library-product-images-edit',
+        organisationId: Number,
+        loaded: Boolean,
+        productId : {
+          type: Number,
+          computed: "_computeProductId(product)"
         },
+        product: Object,
+        loading: {
+          type: Boolean,
+          notify: true
+        }
+      },
+
+      observers: [
+        "refresh(product)",
+      ],
+
+      listeners: {
+        'delete' : '_deleteImage',
+        'default' : '_setDefaultImage',
+        'before-upload' : "_beforeUpload",
+        'error' : "_uploadResult",
+        'success' : "_uploadResult",
+        'validation-error' : "_uploadValidationError",
+      },
+
+      refresh: function(){
+
+        if (!this.product || this.loaded) {
+          return
+        }
+
+        this._getProductImages()
+
+        this.loaded = true;
+      },
+
+      _computeProductId : function(product){
+        return product.id;
+      },
+
+      _getProductImages: function(productId) {
+        var productId = productId || this.productId;
+
+        this.$.prodApi.getProductImages(productId)
+                .then(function(request){
+                  this._images = request.response.results;
+                }.bind(this))
+                .catch(this.fire.bind(this, 'options_error', 'Could not load product images'))
+                .finally(this.set.bind(this, 'loading', false));
+      },
+
+      _getImageName : function(imageUrl){
+        return imageUrl.split('/').splice(-1,1)[0];
+      },
+
+      _deleteImage : function(e){
+        this.loading = true;
+
+        this.$.prodApi.deleteProductImage(this.productId, this._getImageName(e.detail.name))
+                .then(function(request){
+                  this._getProductImages()
+                }.bind(this))
+                .catch(this.fire.bind(this, 'options_error', 'Could not delete image'))
+                .finally(this.set.bind(this, 'loading', false));
+      },
+
+      _setDefaultImage : function(e){
+        this.loading = true;
+        this.$.prodApi.setDefaultImage(this.productId, this._getImageName(e.detail.name))
+                .then(function(request){
+                  this._getProductImages()
+                }.bind(this))
+                .catch(this.fire.bind(this, 'options_error', 'Could not set default image'))
+                .finally(this.set.bind(this, 'loading', false));
+      },
+
+      _beforeUpload : function(e){
+        this.loading = !this.loading;
+      },
+
+      _uploadResult : function(e){
+        this.loading = !this.loading;
+      },
+
+      _uploadValidationError : function(e) {
+        this.$.toast.show(e.detail.toUpperCase())
+      },
+
+      _computeUrl : function(productId){
+        return OC.apiHost + 'resource/product/'+productId+'/image'
+      },
+
+      _computeHeaders : function(organisationId){
+        var headerObj = {};
+
+        headerObj.Authorization = 'Bearer ' + OC.token;
+        headerObj['X-Ordercloud-Organisation'] = OC.clientId;
+        return headerObj;
       },
 
     });
